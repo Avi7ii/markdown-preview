@@ -1,0 +1,37 @@
+name: Build Quick Look Appearance Preview
+
+on:
+  push:
+    branches:
+      - agent/build-quick-look-appearance-preview
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build unsigned debug app
+        run: |
+          xcodebuild \
+            -project md-preview.xcodeproj \
+            -scheme md-preview \
+            -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Debug/Markdown Preview.app" \
+            "$RUNNER_TEMP/Markdown-Preview-Debug.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Markdown-Preview-Debug
+          path: ${{ runner.temp }}/Markdown-Preview-Debug.zip
+          if-no-files-found: error

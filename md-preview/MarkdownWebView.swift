@@ -10,6 +10,7 @@ import WebKit
 /// Presents table operations with a real AppKit context menu. The web views
 /// only identify the clicked cell and apply the selected command; menu
 /// rendering, submenus, keyboard navigation, and accessibility stay native.
+@MainActor
 final class TableContextMenuPresenter: NSObject {
     struct Context {
         let canInsertRowAbove: Bool

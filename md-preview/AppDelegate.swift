@@ -103,6 +103,7 @@ private extension QuickLookAppearanceMode {
 }
 
 @main
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @IBOutlet private weak var checkForUpdatesMenuItem: NSMenuItem?

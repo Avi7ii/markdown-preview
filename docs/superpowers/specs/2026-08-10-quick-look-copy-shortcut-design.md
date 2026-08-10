@@ -12,13 +12,13 @@ The Quick Look extension returns a data-based HTML preview. WebKit paints and se
 
 1. Handle Command-C in the preview HTML and invoke WebKit's native `copy` command. This is the smallest source change, but Finder owns the key equivalent before the data-based HTML preview receives either `keydown` or `keyup`.
 2. Show a floating copy button whenever text is selected. This would work around missing keyboard delivery, but it changes the preview UI and does not satisfy the requested shortcut by itself.
-3. Replace the data-based Quick Look reply with a view-based extension that owns a `WKWebView` and implements the responder-chain copy action. This puts Command-C handling at the layer where Finder dispatches key equivalents while retaining the same rendered HTML.
+3. Replace the data-based Quick Look reply with a view-based extension that owns a `WKWebView`. This gives the rendered selection a normal WebKit responder while retaining the same rendered HTML.
 
 ## Chosen design
 
-Use option 3. Real Finder testing disproved option 1: both a `keydown` implementation and a `keydown` plus `keyup` implementation left the clipboard unchanged. In the second fixed benchmark, Finder copied the selected Markdown file itself, confirming that its file list remained the responder for Command-C even while the data-based HTML visibly owned a text selection.
+Use option 3. Real Finder testing disproved option 1: both a `keydown` implementation and a `keydown` plus `keyup` implementation left the clipboard unchanged. In the second fixed benchmark, Finder copied the selected Markdown file itself, confirming that its file list remained the responder for Command-C while Quick Look was still returning a data-based HTML preview.
 
-The Quick Look extension now owns a `WKWebView`. Its `performKeyEquivalent` handles an unmodified Command-C and asks the page for the current selection. Swift writes both plain text and an HTML fragment to `NSPasteboard`, removing `.md-code-copy` controls from the fragment. The main application remains unchanged because this responder exists only in the extension.
+The Quick Look extension now owns a plain `WKWebView` and leaves first-responder, key-equivalent, selection, and clipboard behavior to WebKit. Native WebKit copying supplies the standard plain-text and HTML representations, and the renderer's existing `copy` listener removes `.md-code-copy` controls. The main application remains unchanged.
 
 The renderer and appearance resolution are unchanged. Relative local images retain their existing byte budgets and path-safety checks; their existing Quick Look attachments are converted to data URLs for the view-based web view.
 

@@ -9,81 +9,64 @@ import Cocoa
 import Quartz
 import WebKit
 
+private final class CursorRectMessageProxy: NSObject, WKScriptMessageHandler {
+    weak var owner: QuickLookWebView?
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        owner?.updateTextCursorRects(from: message.body)
+    }
+}
+
 private final class QuickLookWebView: WKWebView {
-    private var textCursorTrackingArea: NSTrackingArea?
-    private var textCursorEventMonitor: Any?
-    private var cursorRefreshScheduled = false
+    private static let cursorRectMessageName = "mdPreviewTextCursorRects"
+    private var textCursorRects: [NSRect] = []
 
     override var acceptsFirstResponder: Bool { true }
 
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        let messageProxy = CursorRectMessageProxy()
+        configuration.userContentController.add(
+            messageProxy,
+            name: QuickLookWebView.cursorRectMessageName
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: QuickLookWebView.cursorRectReportingScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        super.init(frame: frame, configuration: configuration)
+        messageProxy.owner = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(bounds, cursor: .iBeam)
-    }
-
-    override func updateTrackingAreas() {
-        if let textCursorTrackingArea {
-            removeTrackingArea(textCursorTrackingArea)
-        }
-        super.updateTrackingAreas()
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [.activeAlways, .inVisibleRect, .mouseMoved, .cursorUpdate],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        textCursorTrackingArea = trackingArea
-    }
-
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil, let textCursorEventMonitor {
-            NSEvent.removeMonitor(textCursorEventMonitor)
-            self.textCursorEventMonitor = nil
-        }
-        super.viewWillMove(toWindow: newWindow)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil, textCursorEventMonitor == nil else { return }
-
-        textCursorEventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
-        ) { [weak self] event in
-            guard let self,
-                  event.window === self.window,
-                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else {
-                return event
-            }
-
-            #if DEBUG
-            NSLog("Markdown Preview Quick Look text cursor event: %@", String(describing: event.type))
-            #endif
-            self.setTextCursorAfterWebKit()
-            return event
+        for rect in textCursorRects {
+            addCursorRect(rect, cursor: .iBeam)
         }
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        super.cursorUpdate(with: event)
-        setTextCursorAfterWebKit()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
-        setTextCursorAfterWebKit()
-    }
-
-    private func setTextCursorAfterWebKit() {
-        NSCursor.iBeam.set()
-        guard !cursorRefreshScheduled else { return }
-        cursorRefreshScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            self?.cursorRefreshScheduled = false
-            NSCursor.iBeam.set()
+    fileprivate func updateTextCursorRects(from body: Any) {
+        guard let rows = body as? [Any] else { return }
+        let viewHeight = bounds.height
+        textCursorRects = rows.compactMap { row in
+            guard let values = row as? [NSNumber], values.count == 4 else { return nil }
+            let rect = NSRect(
+                x: values[0].doubleValue,
+                y: viewHeight - values[1].doubleValue - values[3].doubleValue,
+                width: values[2].doubleValue,
+                height: values[3].doubleValue
+            )
+            return rect.intersection(bounds).isEmpty ? nil : rect.intersection(bounds)
         }
+        window?.invalidateCursorRects(for: self)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -135,6 +118,81 @@ private final class QuickLookWebView: WKWebView {
     })()
     """
 
+    private static let cursorRectReportingScript = """
+    (() => {
+        const handler = window.webkit?.messageHandlers?.mdPreviewTextCursorRects;
+        if (!handler) return;
+
+        const interactiveSelector = [
+            'a', 'button', 'input', 'select', 'textarea', 'summary',
+            '[role="button"]', '[contenteditable="true"]', '.md-code-copy'
+        ].join(',');
+        let scheduledFrame = null;
+        let resizeObserver = null;
+        let observedArticle = null;
+
+        const schedule = () => {
+            if (scheduledFrame !== null) return;
+            scheduledFrame = requestAnimationFrame(report);
+        };
+
+        const report = () => {
+            scheduledFrame = null;
+            const article = document.querySelector('article.markdown-body');
+            if (!article) {
+                handler.postMessage([]);
+                return;
+            }
+
+            if (observedArticle !== article && window.ResizeObserver) {
+                resizeObserver?.disconnect();
+                resizeObserver = new ResizeObserver(schedule);
+                resizeObserver.observe(article);
+                observedArticle = article;
+            }
+
+            const viewportWidth = document.documentElement.clientWidth;
+            const viewportHeight = document.documentElement.clientHeight;
+            const rects = [];
+            const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode()) && rects.length < 4096) {
+                if (!node.nodeValue || !node.nodeValue.trim()) continue;
+                const parent = node.parentElement;
+                if (!parent || parent.closest(interactiveSelector)) continue;
+
+                const style = getComputedStyle(parent);
+                if (style.display === 'none' || style.visibility === 'hidden'
+                    || style.userSelect === 'none') continue;
+
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                for (const rect of range.getClientRects()) {
+                    if (rect.width <= 0 || rect.height <= 0
+                        || rect.right <= 0 || rect.bottom <= 0
+                        || rect.left >= viewportWidth || rect.top >= viewportHeight) continue;
+                    rects.push([rect.left, rect.top, rect.width, rect.height]);
+                    if (rects.length >= 4096) break;
+                }
+            }
+            handler.postMessage(rects);
+        };
+
+        addEventListener('scroll', schedule, true);
+        addEventListener('resize', schedule);
+        addEventListener('load', schedule, true);
+        document.addEventListener('DOMContentLoaded', schedule, { once: true });
+        document.addEventListener('toggle', schedule, true);
+        document.fonts?.ready.then(schedule);
+        new MutationObserver(schedule).observe(document, {
+            subtree: true,
+            childList: true,
+            characterData: true
+        });
+        schedule();
+    })();
+    """
+
 }
 
 final class PreviewViewController: NSViewController, QLPreviewingController {
@@ -154,7 +212,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        view.window?.acceptsMouseMovedEvents = true
         view.window?.makeFirstResponder(webView)
     }
 

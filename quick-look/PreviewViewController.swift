@@ -10,6 +10,13 @@ import Quartz
 import WebKit
 
 private final class QuickLookWebView: WKWebView {
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let shortcutModifiers = event.modifierFlags.intersection([
             .command, .control, .option, .shift,
@@ -60,6 +67,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
+        configuration.preferences.isTextInteractionEnabled = true
         webView = QuickLookWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = false
         view = webView
@@ -67,6 +75,11 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             width: MarkdownHTML.preferredPageWidth,
             height: MarkdownHTML.preferredPageWidth
         )
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(webView)
     }
 
     func preparePreviewOfFile(at url: URL) async throws {

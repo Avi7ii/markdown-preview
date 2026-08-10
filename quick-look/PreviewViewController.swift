@@ -239,15 +239,31 @@ private final class QuickLookWebView: WKWebView {
             const scrollY = window.scrollY;
             const viewportWidth = document.documentElement.clientWidth;
             const viewportHeight = document.documentElement.clientHeight;
-            const visible = [];
+            const visiblePointerRects = [];
+            const visibleTextRects = [];
 
             for (const [kind, documentX, documentY, width, height] of cachedRegions) {
                 const x = documentX - scrollX;
                 const y = documentY - scrollY;
                 if (x + width <= 0 || y + height <= 0
                     || x >= viewportWidth || y >= viewportHeight) continue;
-                visible.push([kind, x, y, width, height]);
-                if (visible.length >= maximumVisibleRegions) break;
+
+                const rect = [x, y, width, height];
+                if (kind === 'pointer') {
+                    visiblePointerRects.push(...subtractRects(rect, visiblePointerRects));
+                } else {
+                    visibleTextRects.push(rect);
+                }
+            }
+
+            const visible = visiblePointerRects
+                .slice(0, maximumVisibleRegions)
+                .map((rect) => ['pointer', ...rect]);
+            textRegions: for (const rect of visibleTextRects) {
+                for (const piece of subtractRects(rect, visiblePointerRects)) {
+                    if (visible.length >= maximumVisibleRegions) break textRegions;
+                    visible.push(['text', ...piece]);
+                }
             }
             handler.postMessage(visible);
         };
@@ -279,7 +295,6 @@ private final class QuickLookWebView: WKWebView {
 
             const scrollX = window.scrollX;
             const scrollY = window.scrollY;
-            const pointerRects = [];
 
             for (const element of article.querySelectorAll(pointerSelector)) {
                 if (!isRenderable(element) || element.getAttribute('aria-disabled') === 'true') {
@@ -288,13 +303,12 @@ private final class QuickLookWebView: WKWebView {
                 for (const rect of element.getClientRects()) {
                     const clipped = clipToAncestors(rect, element.parentElement, article);
                     if (!clipped) continue;
-                    pointerRects.push(...subtractRects(
-                        documentRect(clipped, scrollX, scrollY),
-                        pointerRects
-                    ));
+                    cachedRegions.push([
+                        'pointer',
+                        ...documentRect(clipped, scrollX, scrollY)
+                    ]);
                 }
             }
-            cachedRegions.push(...pointerRects.map((rect) => ['pointer', ...rect]));
 
             const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
             let node;
@@ -313,12 +327,10 @@ private final class QuickLookWebView: WKWebView {
                 for (const rect of range.getClientRects()) {
                     const clipped = clipToAncestors(rect, parent, article);
                     if (!clipped) continue;
-                    for (const piece of subtractRects(
-                        documentRect(clipped, scrollX, scrollY),
-                        pointerRects
-                    )) {
-                        cachedRegions.push(['text', ...piece]);
-                    }
+                    cachedRegions.push([
+                        'text',
+                        ...documentRect(clipped, scrollX, scrollY)
+                    ]);
                 }
             }
 

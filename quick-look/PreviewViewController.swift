@@ -146,6 +146,49 @@ private final class QuickLookWebView: WKWebView {
             rect.height
         ];
 
+        const clipsOverflow = (value) => [
+            'auto', 'scroll', 'hidden', 'clip', 'overlay'
+        ].includes(value);
+
+        const clipToAncestors = (rect, startElement, article) => {
+            let left = rect.left;
+            let top = rect.top;
+            let right = rect.right;
+            let bottom = rect.bottom;
+
+            for (let element = startElement; element; element = element.parentElement) {
+                const style = getComputedStyle(element);
+                const clipsX = clipsOverflow(style.overflowX);
+                const clipsY = clipsOverflow(style.overflowY);
+                if (clipsX || clipsY) {
+                    const bounds = element.getBoundingClientRect();
+                    const clipLeft = bounds.left + element.clientLeft;
+                    const clipTop = bounds.top + element.clientTop;
+                    const clipRight = clipLeft + element.clientWidth;
+                    const clipBottom = clipTop + element.clientHeight;
+                    if (clipsX) {
+                        left = Math.max(left, clipLeft);
+                        right = Math.min(right, clipRight);
+                    }
+                    if (clipsY) {
+                        top = Math.max(top, clipTop);
+                        bottom = Math.min(bottom, clipBottom);
+                    }
+                    if (right <= left || bottom <= top) return null;
+                }
+                if (element === article) break;
+            }
+
+            return {
+                left,
+                top,
+                right,
+                bottom,
+                width: right - left,
+                height: bottom - top
+            };
+        };
+
         const subtractRect = (rect, cut) => {
             const rectRight = rect[0] + rect[2];
             const rectBottom = rect[1] + rect[3];
@@ -243,9 +286,10 @@ private final class QuickLookWebView: WKWebView {
                     continue;
                 }
                 for (const rect of element.getClientRects()) {
-                    if (rect.width <= 0 || rect.height <= 0) continue;
+                    const clipped = clipToAncestors(rect, element.parentElement, article);
+                    if (!clipped) continue;
                     pointerRects.push(...subtractRects(
-                        documentRect(rect, scrollX, scrollY),
+                        documentRect(clipped, scrollX, scrollY),
                         pointerRects
                     ));
                 }
@@ -267,9 +311,10 @@ private final class QuickLookWebView: WKWebView {
                 const range = document.createRange();
                 range.selectNodeContents(node);
                 for (const rect of range.getClientRects()) {
-                    if (rect.width <= 0 || rect.height <= 0) continue;
+                    const clipped = clipToAncestors(rect, parent, article);
+                    if (!clipped) continue;
                     for (const piece of subtractRects(
-                        documentRect(rect, scrollX, scrollY),
+                        documentRect(clipped, scrollX, scrollY),
                         pointerRects
                     )) {
                         cachedRegions.push(['text', ...piece]);

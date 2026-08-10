@@ -24,7 +24,7 @@ The renderer and appearance resolution are unchanged. Relative local images reta
 
 Finder hosts the extension view across a ViewBridge remote-window boundary. WebKit performs the correct DOM hit test, but its process-local cursor update is not reliably forwarded to the Finder window. The extension therefore exports cursor regions through AppKit's public cursor-rectangle lifecycle, which ViewBridge does carry across the boundary. It rebuilds cached text and link rectangles only for layout lifecycle events (initial load, renderer completion, font/image load, resize, and disclosure changes); scrolling only projects that cached geometry into the viewport. There is no `mousemove` listener, per-hover DOM hit test, local event monitor, or forced first-responder behavior.
 
-DOM client rectangles and the `WKWebView` both use a flipped, top-left coordinate system. The bridge preserves that orientation instead of mirroring the rectangles vertically. Text rectangles receive the I-beam, links and enabled controls receive the pointing hand, and uncovered whitespace keeps the standard arrow.
+DOM client rectangles and the `WKWebView` both use a flipped, top-left coordinate system. The bridge preserves that orientation instead of mirroring the rectangles vertically. It clips regions to overflow ancestors, removes text-region overlap beneath links and controls, and lets nested scrollers trigger a layout refresh. Text rectangles receive the I-beam, links and enabled controls receive the pointing hand, and uncovered whitespace keeps the standard arrow.
 
 ## Safety and fallback
 

@@ -327,7 +327,12 @@ final class MarkdownHTMLRenderTests: XCTestCase {
             "if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;"
         ))
         XCTAssertTrue(rendered.html.contains("return document.execCommand('copy');"))
-        XCTAssertTrue(rendered.html.contains("if (copySelectionFromShortcut(event))"))
+        XCTAssertTrue(rendered.html.contains(
+            "copiedSelectionOnKeyDown = copySelectionFromShortcut(event);"
+        ))
+        XCTAssertTrue(rendered.html.contains(
+            "if (copiedOnKeyDown || !copySelectionFromShortcut(event)) return;"
+        ))
     }
 
     func testBlockquoteUsesItsContentDirectionForLogicalBorder() {

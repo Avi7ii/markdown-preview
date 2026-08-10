@@ -1205,8 +1205,10 @@ nonisolated enum MarkdownHTML {
             return false;
         }
 
+        let copiedSelectionOnKeyDown = false;
         document.addEventListener('keydown', (event) => {
-            if (copySelectionFromShortcut(event)) {
+            copiedSelectionOnKeyDown = copySelectionFromShortcut(event);
+            if (copiedSelectionOnKeyDown) {
                 event.preventDefault();
                 event.stopPropagation();
                 return;
@@ -1215,6 +1217,14 @@ nonisolated enum MarkdownHTML {
                 event.preventDefault();
                 event.stopPropagation();
             }
+        }, true);
+
+        document.addEventListener('keyup', (event) => {
+            const copiedOnKeyDown = copiedSelectionOnKeyDown;
+            copiedSelectionOnKeyDown = false;
+            if (copiedOnKeyDown || !copySelectionFromShortcut(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
         }, true);
 
         function decorateCodeBlocks(root = document) {

@@ -22,6 +22,8 @@ The Quick Look extension now owns a `WKWebView`. Its `performKeyEquivalent` hand
 
 The renderer and appearance resolution are unchanged. Relative local images retain their existing byte budgets and path-safety checks; their existing Quick Look attachments are converted to data URLs for the view-based web view.
 
+Because a view-based Quick Look preview does not reliably infer WebKit's I-beam cursor from selectable text when hosted out of process, the extension adds a preview-only cursor stylesheet. The reading surface explicitly uses the native text cursor, while links and enabled controls retain pointer cursors and existing specialized controls such as Mermaid keep their own cursor rules. This stylesheet does not change selection painting or the main app.
+
 ## Safety and fallback
 
 - Do not modify the pasteboard without a non-empty active selection.
@@ -35,4 +37,5 @@ The renderer and appearance resolution are unchanged. Relative local images reta
 2. Run the Swift test suite and a full Xcode app build in CI.
 3. Side-load the resulting app and Quick Look extension next to the official installation.
 4. Put a sentinel value on the pasteboard, select known text in a Markdown Quick Look preview, press Command-C, paste into a text editor, and verify that the selected Markdown text replaced the sentinel.
-5. Stop after local installation and verification; create no upstream pull request until the user approves the behavior.
+5. Hover rendered prose and verify the cursor changes to the I-beam; hover a link or enabled button and verify it remains a pointer.
+6. Stop after local installation and verification; create no upstream pull request until the user approves the behavior.

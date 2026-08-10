@@ -110,8 +110,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         )
 
         loadViewIfNeeded()
+        let htmlWithAssets = InlineLocalAssets.dataURLHTML(from: rewrite)
         webView.loadHTMLString(
-            InlineLocalAssets.dataURLHTML(from: rewrite),
+            QuickLookHTML.addingNativeTextCursor(to: htmlWithAssets),
             baseURL: baseDirectory
         )
     }

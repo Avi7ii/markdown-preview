@@ -16,6 +16,7 @@ private final class CursorRegionMessageProxy: NSObject, WKScriptMessageHandler {
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
+        guard message.frameInfo.isMainFrame else { return }
         owner?.updateCursorRegions(from: message.body)
     }
 }
@@ -27,6 +28,7 @@ private final class QuickLookWebView: WKWebView {
     }
 
     private static let cursorRegionMessageName = "mdPreviewCursorRegions"
+    private static let maximumVisibleCursorRegions = 4_096
     private var cursorRegions: [CursorRegion] = []
 
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
@@ -52,14 +54,16 @@ private final class QuickLookWebView: WKWebView {
     override func resetCursorRects() {
         super.resetCursorRects()
         for region in cursorRegions {
-            addCursorRect(region.rect, cursor: region.cursor)
+            let rect = region.rect.intersection(visibleRect)
+            guard !rect.isNull, !rect.isEmpty else { continue }
+            addCursorRect(rect, cursor: region.cursor)
         }
     }
 
     fileprivate func updateCursorRegions(from body: Any) {
         guard let rows = body as? [Any] else { return }
 
-        cursorRegions = rows.compactMap { row in
+        cursorRegions = rows.prefix(Self.maximumVisibleCursorRegions).compactMap { row in
             guard let values = row as? [Any],
                   values.count == 5,
                   let kind = values[0] as? String,
@@ -71,8 +75,9 @@ private final class QuickLookWebView: WKWebView {
                   width > 0,
                   height > 0 else { return nil }
 
-            let localY = isFlipped ? y : bounds.height - y - height
-            let rect = NSRect(x: x, y: localY, width: width, height: height)
+            let localX = bounds.minX + x
+            let localY = isFlipped ? bounds.minY + y : bounds.maxY - y - height
+            let rect = NSRect(x: localX, y: localY, width: width, height: height)
                 .intersection(bounds)
             guard !rect.isNull, !rect.isEmpty else { return nil }
 
@@ -88,6 +93,11 @@ private final class QuickLookWebView: WKWebView {
             return CursorRegion(rect: rect, cursor: cursor)
         }
 
+        window?.invalidateCursorRects(for: self)
+    }
+
+    fileprivate func clearCursorRegions() {
+        cursorRegions = []
         window?.invalidateCursorRects(for: self)
     }
 
@@ -112,7 +122,7 @@ private final class QuickLookWebView: WKWebView {
         ].join(',');
         const textExclusionSelector = [
             'a', 'button', 'input', 'select', 'textarea', 'summary',
-            '[role="button"]', '[contenteditable="true"]', '.md-code-copy'
+            '[role="button"]', '.md-code-copy', '.mermaid-stage'
         ].join(',');
 
         let cachedRegions = [];
@@ -120,6 +130,7 @@ private final class QuickLookWebView: WKWebView {
         let viewportFrame = null;
         let resizeObserver = null;
         let observedArticle = null;
+        const maximumVisibleRegions = 4096;
 
         const isRenderable = (element) => {
             const style = getComputedStyle(element);
@@ -128,15 +139,55 @@ private final class QuickLookWebView: WKWebView {
                 && style.pointerEvents !== 'none';
         };
 
-        const appendDocumentRect = (kind, rect, scrollX, scrollY) => {
-            if (rect.width <= 0 || rect.height <= 0) return;
-            cachedRegions.push([
-                kind,
-                rect.left + scrollX,
-                rect.top + scrollY,
-                rect.width,
-                rect.height
-            ]);
+        const documentRect = (rect, scrollX, scrollY) => [
+            rect.left + scrollX,
+            rect.top + scrollY,
+            rect.width,
+            rect.height
+        ];
+
+        const subtractRect = (rect, cut) => {
+            const rectRight = rect[0] + rect[2];
+            const rectBottom = rect[1] + rect[3];
+            const cutRight = cut[0] + cut[2];
+            const cutBottom = cut[1] + cut[3];
+            const overlapLeft = Math.max(rect[0], cut[0]);
+            const overlapTop = Math.max(rect[1], cut[1]);
+            const overlapRight = Math.min(rectRight, cutRight);
+            const overlapBottom = Math.min(rectBottom, cutBottom);
+            if (overlapRight <= overlapLeft || overlapBottom <= overlapTop) {
+                return [rect];
+            }
+
+            const pieces = [];
+            if (overlapTop > rect[1]) {
+                pieces.push([rect[0], rect[1], rect[2], overlapTop - rect[1]]);
+            }
+            if (overlapBottom < rectBottom) {
+                pieces.push([rect[0], overlapBottom, rect[2], rectBottom - overlapBottom]);
+            }
+            if (overlapLeft > rect[0]) {
+                pieces.push([
+                    rect[0], overlapTop,
+                    overlapLeft - rect[0], overlapBottom - overlapTop
+                ]);
+            }
+            if (overlapRight < rectRight) {
+                pieces.push([
+                    overlapRight, overlapTop,
+                    rectRight - overlapRight, overlapBottom - overlapTop
+                ]);
+            }
+            return pieces;
+        };
+
+        const subtractRects = (rect, cuts) => {
+            let pieces = [rect];
+            for (const cut of cuts) {
+                pieces = pieces.flatMap((piece) => subtractRect(piece, cut));
+                if (pieces.length === 0) break;
+            }
+            return pieces;
         };
 
         const postVisibleRegions = () => {
@@ -153,6 +204,7 @@ private final class QuickLookWebView: WKWebView {
                 if (x + width <= 0 || y + height <= 0
                     || x >= viewportWidth || y >= viewportHeight) continue;
                 visible.push([kind, x, y, width, height]);
+                if (visible.length >= maximumVisibleRegions) break;
             }
             handler.postMessage(visible);
         };
@@ -164,6 +216,10 @@ private final class QuickLookWebView: WKWebView {
 
         const rebuildLayoutCache = () => {
             layoutFrame = null;
+            if (viewportFrame !== null) {
+                cancelAnimationFrame(viewportFrame);
+                viewportFrame = null;
+            }
             const article = document.querySelector('article.markdown-body');
             cachedRegions = [];
             if (!article) {
@@ -180,13 +236,21 @@ private final class QuickLookWebView: WKWebView {
 
             const scrollX = window.scrollX;
             const scrollY = window.scrollY;
+            const pointerRects = [];
 
             for (const element of article.querySelectorAll(pointerSelector)) {
-                if (!isRenderable(element)) continue;
+                if (!isRenderable(element) || element.getAttribute('aria-disabled') === 'true') {
+                    continue;
+                }
                 for (const rect of element.getClientRects()) {
-                    appendDocumentRect('pointer', rect, scrollX, scrollY);
+                    if (rect.width <= 0 || rect.height <= 0) continue;
+                    pointerRects.push(...subtractRects(
+                        documentRect(rect, scrollX, scrollY),
+                        pointerRects
+                    ));
                 }
             }
+            cachedRegions.push(...pointerRects.map((rect) => ['pointer', ...rect]));
 
             const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
             let node;
@@ -203,7 +267,13 @@ private final class QuickLookWebView: WKWebView {
                 const range = document.createRange();
                 range.selectNodeContents(node);
                 for (const rect of range.getClientRects()) {
-                    appendDocumentRect('text', rect, scrollX, scrollY);
+                    if (rect.width <= 0 || rect.height <= 0) continue;
+                    for (const piece of subtractRects(
+                        documentRect(rect, scrollX, scrollY),
+                        pointerRects
+                    )) {
+                        cachedRegions.push(['text', ...piece]);
+                    }
                 }
             }
 
@@ -215,10 +285,25 @@ private final class QuickLookWebView: WKWebView {
             layoutFrame = requestAnimationFrame(rebuildLayoutCache);
         }
 
-        addEventListener('scroll', scheduleViewportProjection, true);
+        const handleScroll = (event) => {
+            const target = event.target;
+            const rootScroll = target === window
+                || target === document
+                || target === document.scrollingElement
+                || target === document.documentElement
+                || target === document.body;
+            if (rootScroll) {
+                scheduleViewportProjection();
+            } else {
+                scheduleLayoutRebuild();
+            }
+        };
+
+        addEventListener('scroll', handleScroll, true);
         addEventListener('resize', scheduleLayoutRebuild);
         document.addEventListener('DOMContentLoaded', scheduleLayoutRebuild, { once: true });
         document.addEventListener('load', scheduleLayoutRebuild, true);
+        document.addEventListener('error', scheduleLayoutRebuild, true);
         document.addEventListener('toggle', scheduleLayoutRebuild, true);
         for (const eventName of [
             'md-preview-math-rendered',
@@ -276,6 +361,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         )
 
         loadViewIfNeeded()
+        webView.clearCursorRegions()
         webView.loadHTMLString(
             InlineLocalAssets.dataURLHTML(from: rewrite),
             baseURL: baseDirectory

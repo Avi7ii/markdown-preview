@@ -10,11 +10,50 @@ import Quartz
 import WebKit
 
 private final class QuickLookWebView: WKWebView {
+    private var textCursorTrackingArea: NSTrackingArea?
+    private var cursorRefreshScheduled = false
+
     override var acceptsFirstResponder: Bool { true }
 
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .iBeam)
+    }
+
+    override func updateTrackingAreas() {
+        if let textCursorTrackingArea {
+            removeTrackingArea(textCursorTrackingArea)
+        }
+        super.updateTrackingAreas()
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeAlways, .inVisibleRect, .mouseMoved, .cursorUpdate],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        textCursorTrackingArea = trackingArea
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        super.cursorUpdate(with: event)
+        setTextCursorAfterWebKit()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        setTextCursorAfterWebKit()
+    }
+
+    private func setTextCursorAfterWebKit() {
+        NSCursor.iBeam.set()
+        guard !cursorRefreshScheduled else { return }
+        cursorRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.cursorRefreshScheduled = false
+            NSCursor.iBeam.set()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -85,6 +124,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        view.window?.acceptsMouseMovedEvents = true
         view.window?.makeFirstResponder(webView)
     }
 

@@ -5,6 +5,9 @@ on:
     branches:
       - agent/build-quick-look-copy-preview
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-26
@@ -32,6 +35,23 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "$RUNNER_TEMP/DerivedData/Build/Products/Debug/Markdown Preview.app" \
             "$RUNNER_TEMP/Markdown-Preview-Debug.zip"
+
+      - name: Publish temporary test artifact branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_repo="$RUNNER_TEMP/artifact-repo"
+          mkdir "$artifact_repo"
+          git -C "$artifact_repo" init
+          git -C "$artifact_repo" config user.name github-actions
+          git -C "$artifact_repo" config user.email github-actions@github.com
+          cp "$RUNNER_TEMP/Markdown-Preview-Debug.zip" "$artifact_repo/"
+          git -C "$artifact_repo" add Markdown-Preview-Debug.zip
+          git -C "$artifact_repo" commit -m "test artifact ${GITHUB_SHA}"
+          git -C "$artifact_repo" remote add origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C "$artifact_repo" push --force origin \
+            HEAD:refs/heads/agent/build-quick-look-copy-artifact
 
       - uses: actions/upload-artifact@v4
         with:

@@ -310,6 +310,26 @@ final class MarkdownHTMLRenderTests: XCTestCase {
         XCTAssertTrue(nonSelectableRules[0].contains(".md-code-copy"))
     }
 
+    func testReadOnlyPreviewHandlesSelectionCopyShortcutWithoutChangingAppCopy() {
+        let rendered = MarkdownHTML.render(
+            markdown: "Select this text.",
+            vendorLoading: .lazy
+        )
+
+        XCTAssertTrue(rendered.html.contains("function copySelectionFromShortcut(event)"))
+        XCTAssertTrue(rendered.html.contains(
+            "if (hasHostBridge || event.defaultPrevented || event.isComposing) return false;"
+        ))
+        XCTAssertTrue(rendered.html.contains(
+            "if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;"
+        ))
+        XCTAssertTrue(rendered.html.contains(
+            "if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;"
+        ))
+        XCTAssertTrue(rendered.html.contains("return document.execCommand('copy');"))
+        XCTAssertTrue(rendered.html.contains("if (copySelectionFromShortcut(event))"))
+    }
+
     func testBlockquoteUsesItsContentDirectionForLogicalBorder() {
         let rtl = MarkdownHTML.render(
             markdown: "> هذا اقتباس بالعربية.",

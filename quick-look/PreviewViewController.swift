@@ -13,10 +13,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private var webView: WKWebView!
 
     override func loadView() {
-        let configuration = WKWebViewConfiguration()
-        configuration.preferences.isTextInteractionEnabled = true
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = false
+        webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         view = webView
         preferredContentSize = NSSize(
             width: MarkdownHTML.preferredPageWidth,

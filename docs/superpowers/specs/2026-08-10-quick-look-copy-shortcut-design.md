@@ -22,7 +22,7 @@ The Quick Look extension now owns a `WKWebView`. Its `performKeyEquivalent` hand
 
 The renderer and appearance resolution are unchanged. Relative local images retain their existing byte budgets and path-safety checks; their existing Quick Look attachments are converted to data URLs for the view-based web view.
 
-Because Quick Look's out-of-process host keeps restoring the arrow cursor even when WebKit reports selectable text, the extension registers AppKit's native I-beam cursor rect and a view-scoped tracking area. Mouse-move and cursor-update callbacks set the I-beam after WebKit handles the event, including once on the next main-loop turn so the host's deferred arrow update cannot win. It deliberately leaves the generated Markdown HTML and `WKWebViewConfiguration` unchanged. This does not change selection painting or the main app.
+Because Quick Look's out-of-process host keeps restoring the arrow cursor even when WebKit reports selectable text, the extension registers AppKit's native I-beam cursor rect, a view-scoped tracking area, and a local event monitor limited to that web view's window and bounds. Mouse movement and left-button callbacks set the I-beam after WebKit handles the event, including once on the next main-loop turn so the host's deferred arrow update cannot win. It deliberately leaves the generated Markdown HTML and `WKWebViewConfiguration` unchanged. This does not change selection painting or the main app.
 
 ## Safety and fallback
 

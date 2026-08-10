@@ -11,6 +11,7 @@ import WebKit
 
 private final class QuickLookWebView: WKWebView {
     private var textCursorTrackingArea: NSTrackingArea?
+    private var textCursorEventMonitor: Any?
     private var cursorRefreshScheduled = false
 
     override var acceptsFirstResponder: Bool { true }
@@ -34,6 +35,35 @@ private final class QuickLookWebView: WKWebView {
         )
         addTrackingArea(trackingArea)
         textCursorTrackingArea = trackingArea
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, let textCursorEventMonitor {
+            NSEvent.removeMonitor(textCursorEventMonitor)
+            self.textCursorEventMonitor = nil
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, textCursorEventMonitor == nil else { return }
+
+        textCursorEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            guard let self,
+                  event.window === self.window,
+                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else {
+                return event
+            }
+
+            #if DEBUG
+            NSLog("Markdown Preview Quick Look text cursor event: %@", String(describing: event.type))
+            #endif
+            self.setTextCursorAfterWebKit()
+            return event
+        }
     }
 
     override func cursorUpdate(with event: NSEvent) {

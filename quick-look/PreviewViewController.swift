@@ -12,6 +12,11 @@ import WebKit
 private final class QuickLookWebView: WKWebView {
     override var acceptsFirstResponder: Bool { true }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .iBeam)
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
@@ -61,31 +66,6 @@ private final class QuickLookWebView: WKWebView {
     })()
     """
 
-    static let textCursorStyleScript = """
-    (() => {
-        if (document.getElementById('md-quick-look-interaction')) return;
-
-        const style = document.createElement('style');
-        style.id = 'md-quick-look-interaction';
-        style.textContent = `
-            html,
-            body,
-            article.markdown-body {
-                cursor: text;
-            }
-            a[href],
-            button:not(:disabled),
-            input:not(:disabled),
-            select:not(:disabled),
-            textarea:not(:disabled),
-            summary,
-            [role="button"] {
-                cursor: pointer;
-            }
-        `;
-        (document.head || document.documentElement).appendChild(style);
-    })()
-    """
 }
 
 final class PreviewViewController: NSViewController, QLPreviewingController {
@@ -94,11 +74,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     override func loadView() {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.isTextInteractionEnabled = true
-        configuration.userContentController.addUserScript(WKUserScript(
-            source: QuickLookWebView.textCursorStyleScript,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
-        ))
         webView = QuickLookWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = false
         view = webView

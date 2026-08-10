@@ -133,34 +133,3 @@ enum InlineLocalAssets {
         return candidatePath == basePath || candidatePath.hasPrefix(basePath + "/")
     }
 }
-
-enum QuickLookHTML {
-    private static let interactionStyle = """
-    <style id="md-quick-look-interaction">
-    html,
-    body,
-    article.markdown-body {
-        cursor: text;
-    }
-    a[href],
-    button:not(:disabled),
-    input:not(:disabled),
-    select:not(:disabled),
-    textarea:not(:disabled),
-    summary,
-    [role="button"] {
-        cursor: pointer;
-    }
-    </style>
-    """
-
-    static func addingNativeTextCursor(to html: String) -> String {
-        guard let headEnd = html.range(of: "</head>", options: .caseInsensitive) else {
-            return interactionStyle + "\n" + html
-        }
-
-        var output = html
-        output.insert(contentsOf: interactionStyle + "\n", at: headEnd.lowerBound)
-        return output
-    }
-}

@@ -22,7 +22,7 @@ The Quick Look extension now owns a `WKWebView`. Its `performKeyEquivalent` hand
 
 The renderer and appearance resolution are unchanged. Relative local images retain their existing byte budgets and path-safety checks; their existing Quick Look attachments are converted to data URLs for the view-based web view.
 
-Because a view-based Quick Look preview does not reliably infer WebKit's I-beam cursor from selectable text when hosted out of process, the extension adds a preview-only cursor stylesheet. The reading surface explicitly uses the native text cursor, while links and enabled controls retain pointer cursors and existing specialized controls such as Mermaid keep their own cursor rules. This stylesheet does not change selection painting or the main app.
+Because a view-based Quick Look preview does not reliably infer WebKit's I-beam cursor from selectable text when hosted out of process, the extension adds a preview-only cursor stylesheet through a `WKUserScript` at document end. It deliberately leaves the generated Markdown HTML byte-for-byte unchanged. The reading surface explicitly uses the native text cursor, while links and enabled controls retain pointer cursors and existing specialized controls such as Mermaid keep their own cursor rules. This stylesheet does not change selection painting or the main app.
 
 ## Safety and fallback
 

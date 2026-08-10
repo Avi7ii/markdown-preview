@@ -254,22 +254,4 @@ final class InlineLocalAssetsTests: XCTestCase {
             "data:application/octet-stream;base64,\(blue.base64EncodedString())"
         ))
     }
-
-    func testViewBasedPreviewDeclaresNativeTextCursorWithoutFlatteningControls() {
-        let html = """
-        <!doctype html>
-        <html><head><title>Preview</title></head><body></body></html>
-        """
-
-        let prepared = QuickLookHTML.addingNativeTextCursor(to: html)
-
-        XCTAssertTrue(prepared.contains("article.markdown-body {\n    cursor: text;"))
-        XCTAssertTrue(prepared.contains("a[href],"))
-        XCTAssertTrue(prepared.contains("button:not(:disabled),"))
-        XCTAssertTrue(prepared.contains("[role=\"button\"] {\n    cursor: pointer;"))
-        XCTAssertLessThan(
-            try XCTUnwrap(prepared.range(of: "md-quick-look-interaction")?.lowerBound),
-            try XCTUnwrap(prepared.range(of: "</head>")?.lowerBound)
-        )
-    }
 }

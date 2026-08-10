@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum InlineLocalAssets {
 
@@ -72,6 +73,17 @@ enum InlineLocalAssets {
         output += nsHtml.substring(from: cursor)
 
         return Result(html: output, attachments: attachments)
+    }
+
+    static func dataURLHTML(from result: Result) -> String {
+        var html = result.html
+        for (contentID, attachment) in result.attachments.sorted(by: { $0.key < $1.key }) {
+            let mimeType = UTType(filenameExtension: attachment.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            let dataURL = "data:\(mimeType);base64,\(attachment.data.base64EncodedString())"
+            html = html.replacingOccurrences(of: "cid:\(contentID)", with: dataURL)
+        }
+        return html
     }
 
     // Matches the double-quoted image tags emitted by MarkdownHTML's renderer.

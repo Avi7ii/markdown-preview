@@ -7,33 +7,99 @@
 
 import Cocoa
 import Quartz
+import WebKit
 
-class PreviewViewController: NSViewController, QLPreviewingController {
+private final class QuickLookWebView: WKWebView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let shortcutModifiers = event.modifierFlags.intersection([
+            .command, .control, .option, .shift,
+        ])
+        guard shortcutModifiers == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "c" else {
+            return super.performKeyEquivalent(with: event)
+        }
 
-    override var nibName: NSNib.Name? {
-        return NSNib.Name("PreviewViewController")
+        copySelectionToPasteboard()
+        return true
     }
+
+    private func copySelectionToPasteboard() {
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let result = try? await evaluateJavaScript(Self.selectionPayloadScript),
+                  let payload = result as? [String: Any],
+                  let text = payload["text"] as? String,
+                  !text.isEmpty else { return }
+
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            if let html = payload["html"] as? String, !html.isEmpty {
+                pasteboard.setString(html, forType: .html)
+            }
+        }
+    }
+
+    private static let selectionPayloadScript = """
+    (() => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+
+        const container = document.createElement('div');
+        for (let i = 0; i < selection.rangeCount; i += 1) {
+            container.appendChild(selection.getRangeAt(i).cloneContents());
+        }
+        container.querySelectorAll('.md-code-copy').forEach((button) => button.remove());
+        return { text: selection.toString(), html: container.innerHTML };
+    })()
+    """
+}
+
+final class PreviewViewController: NSViewController, QLPreviewingController {
+    private var webView: QuickLookWebView!
 
     override func loadView() {
-        super.loadView()
-        // Do any additional setup after loading the view.
+        let configuration = WKWebViewConfiguration()
+        webView = QuickLookWebView(frame: .zero, configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = false
+        view = webView
+        preferredContentSize = NSSize(
+            width: MarkdownHTML.preferredPageWidth,
+            height: MarkdownHTML.preferredPageWidth
+        )
     }
-
-    /*
-    func preparePreviewOfSearchableItem(identifier: String, queryString: String?) async throws {
-        // Implement this method and set QLSupportsSearchableItems to YES in the Info.plist of the extension if you support CoreSpotlight.
-
-        // Perform any setup necessary in order to prepare the view.
-        // Quick Look will display a loading spinner until this returns.
-    }
-    */
 
     func preparePreviewOfFile(at url: URL) async throws {
-        // Add the supported content types to the QLSupportedContentTypes array in the Info.plist of the extension.
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let appearanceMode = AppearanceMode.current
+        let colorScheme: MarkdownHTML.ColorScheme
+        switch appearanceMode {
+        case .automatic:
+            let appearance = NSApplication.shared.effectiveAppearance
+            let systemIsDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            colorScheme = appearanceMode.resolvedColorScheme(systemIsDark: systemIsDark)
+        case .light:
+            colorScheme = .light
+        case .dark:
+            colorScheme = .dark
+        }
 
-        // Perform any setup necessary in order to prepare the view.
+        let renderedHTML = MarkdownHTML.makeHTML(
+            from: text,
+            allowsScroll: true,
+            colorScheme: colorScheme
+        )
+        let baseDirectory = url.deletingLastPathComponent()
+        let rewrite = InlineLocalAssets.rewriteRelativeImages(
+            html: renderedHTML,
+            baseDirectory: baseDirectory,
+            reader: { try Data(contentsOf: $0) }
+        )
 
-        // Quick Look will display a loading spinner until this returns.
+        loadViewIfNeeded()
+        webView.loadHTMLString(
+            InlineLocalAssets.dataURLHTML(from: rewrite),
+            baseURL: baseDirectory
+        )
     }
-
 }

@@ -235,4 +235,23 @@ final class InlineLocalAssetsTests: XCTestCase {
             Set([red, blue])
         )
     }
+
+    func testAttachmentsCanBeEmbeddedAsDataURLsForViewBasedPreview() {
+        let result = InlineLocalAssets.rewriteRelativeImages(
+            html: #"<img src="a.png"><img src="b.bin">"#,
+            baseDirectory: baseDir,
+            reader: reader([
+                "/tmp/qltest-fixture/a.png": red,
+                "/tmp/qltest-fixture/b.bin": blue,
+            ])
+        )
+
+        let html = InlineLocalAssets.dataURLHTML(from: result)
+
+        XCTAssertFalse(html.contains("cid:"))
+        XCTAssertTrue(html.contains("data:image/png;base64,\(red.base64EncodedString())"))
+        XCTAssertTrue(html.contains(
+            "data:application/octet-stream;base64,\(blue.base64EncodedString())"
+        ))
+    }
 }

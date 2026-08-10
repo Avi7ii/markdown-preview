@@ -238,11 +238,11 @@ final class InlineLocalAssetsTests: XCTestCase {
 
     func testAttachmentsCanBeEmbeddedAsDataURLsForViewBasedPreview() {
         let result = InlineLocalAssets.rewriteRelativeImages(
-            html: #"<img src="a.png"><img src="b.bin">"#,
+            html: #"<img src="a.png"><img src="b">"#,
             baseDirectory: baseDir,
             reader: reader([
                 "/tmp/qltest-fixture/a.png": red,
-                "/tmp/qltest-fixture/b.bin": blue,
+                "/tmp/qltest-fixture/b": blue,
             ])
         )
 

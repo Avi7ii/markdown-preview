@@ -375,7 +375,7 @@ private final class QuickLookWebView: WKWebView {
     """
 }
 
-final class PreviewViewController: NSViewController, QLPreviewingController {
+final class PreviewViewController: NSViewController, QLPreviewingController, WKNavigationDelegate {
     private var webView: QuickLookWebView!
 
     override func loadView() {
@@ -383,6 +383,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             frame: .zero,
             configuration: WKWebViewConfiguration()
         )
+        webView.navigationDelegate = self
         view = webView
         preferredContentSize = NSSize(
             width: MarkdownHTML.preferredPageWidth,
@@ -421,7 +422,38 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         webView.clearCursorRegions()
         webView.loadHTMLString(
             InlineLocalAssets.dataURLHTML(from: rewrite),
-            baseURL: baseDirectory
+            // Admitted local images are already data URLs. A directory base
+            // would let WebKit fetch rejected or over-budget relative images.
+            baseURL: nil
         )
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        guard navigationAction.navigationType == .linkActivated else {
+            decisionHandler(.allow)
+            return
+        }
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        let isPageFragment = url.scheme == "about"
+            && url.path == "blank"
+            && url.fragment != nil
+        if isPageFragment {
+            decisionHandler(.allow)
+            return
+        }
+
+        if let scheme = url.scheme?.lowercased(),
+           ["http", "https", "mailto"].contains(scheme) {
+            NSWorkspace.shared.open(url)
+        }
+        decisionHandler(.cancel)
     }
 }
